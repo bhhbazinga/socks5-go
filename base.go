@@ -7,6 +7,7 @@ import (
 	"net"
 )
 
+var key = "1234567890qwerty"
 var buffSize = 1024
 
 const chanSize = 1024

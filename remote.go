@@ -23,7 +23,8 @@ type remoteTunnel struct {
 }
 
 // OpenRemoteTunnel open a remote tunnel that connect local to remote
-func OpenRemoteTunnel(conn net.Conn) {
+func OpenRemoteTunnel(conn net.Conn, k string) {
+	key = k
 	remoteTunnel := new(remoteTunnel)
 	remoteTunnel.tunnel = new(tunnel)
 	remoteTunnel.tunnel.clientSock = CreateSock(

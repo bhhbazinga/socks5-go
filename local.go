@@ -54,10 +54,9 @@ type localTunnel struct {
 	readedCount int
 }
 
-const key = "1234567890123456"
-
 // OpenLocalTunnel open a local tunnel that connect browser to local
-func OpenLocalTunnel(conn net.Conn, remoteAddr string) {
+func OpenLocalTunnel(conn net.Conn, remoteAddr string, k string) {
+	key = k
 	localTunnel := new(localTunnel)
 	localTunnel.state = open
 	localTunnel.readedCount = 0

@@ -18,6 +18,8 @@ var (
 
 	ra string
 	rp string
+
+	k string
 )
 
 func localStart() {
@@ -31,7 +33,7 @@ func localStart() {
 		if err != nil {
 			log.Println("accept err:", err)
 		} else {
-			socks5.OpenLocalTunnel(conn, fmt.Sprintf("%s:%s", ra, rp))
+			socks5.OpenLocalTunnel(conn, fmt.Sprintf("%s:%s", ra, rp), k)
 		}
 	}
 }
@@ -47,7 +49,7 @@ func remoteStart() {
 		if err != nil {
 			log.Println("accept err:", err)
 		} else {
-			socks5.OpenRemoteTunnel(conn)
+			socks5.OpenRemoteTunnel(conn, k)
 		}
 	}
 }
@@ -58,9 +60,9 @@ func usage() {
 	fmt.Fprint(os.Stderr, "\n")
 	fmt.Fprint(os.Stderr, "Examples:\n")
 	fmt.Fprint(os.Stderr, "Run as local:")
-	fmt.Fprint(os.Stderr, "-l -la 0.0.0.0 -lp 8001 -ra 10.101.200.20 -rp 8002\n")
+	fmt.Fprint(os.Stderr, "-l -la 0.0.0.0 -lp 8001 -ra 10.101.200.20 -rp 8002 -k 1234567890qwerty\n")
 	fmt.Fprint(os.Stderr, "Run as remote:")
-	fmt.Fprint(os.Stderr, "-r -ra 0.0.0.0 -rp 8002\n")
+	fmt.Fprint(os.Stderr, "-r -ra 0.0.0.0 -rp 8002 -k 1234567890qwerty\n")
 	os.Exit(1)
 }
 
@@ -73,6 +75,8 @@ func init() {
 
 	flag.StringVar(&ra, "ra", "", "remote ip address")
 	flag.StringVar(&rp, "rp", "", "remote port")
+
+	flag.StringVar(&k, "k", "1234567890qwerty", "a 16bytes key of AES128")
 	flag.Usage = usage
 }
 
