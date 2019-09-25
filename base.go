@@ -2,11 +2,13 @@ package socks5
 
 import (
 	"bytes"
+	"io"
 	"log"
 	"net"
 )
 
-const buffSize = 1024
+var buffSize = 1024
+
 const chanSize = 1024
 
 // ReadableFunc as a callback when socket readable or closed
@@ -19,6 +21,7 @@ type Sock struct {
 	writeChan        chan []byte
 	readableCallback ReadableFunc
 	closedCallback   ReadableFunc
+	closed           bool
 }
 
 type tunnel struct {
@@ -54,7 +57,7 @@ func (tunnel *tunnel) writeRemote(buff []byte) {
 }
 
 func (tunnel *tunnel) writeSock(sock *Sock, buff []byte) {
-	if sock == nil {
+	if sock != nil {
 		sock.write(buff)
 	}
 }
@@ -70,22 +73,32 @@ func (tunnel *tunnel) shutdown() {
 
 // CreateSock : create a socket
 func CreateSock(conn net.Conn, readableCb ReadableFunc, closedCb ReadableFunc) *Sock {
-	self := new(Sock)
-	self.conn = conn
-	self.readBuff = new(bytes.Buffer)
-	self.readableCallback = readableCb
-	self.closedCallback = closedCb
-	self.writeChan = make(chan []byte, chanSize)
-	return self
+	sock := new(Sock)
+	sock.conn = conn
+	sock.readBuff = new(bytes.Buffer)
+	sock.readableCallback = readableCb
+	sock.closedCallback = closedCb
+	sock.writeChan = make(chan []byte, chanSize)
+	sock.closed = false
+	return sock
 }
 
 func (sock *Sock) start() {
 	go func() {
 		for {
+			if sock.closed {
+				return
+			}
+
 			buff := make([]byte, buffSize)
 			n, err := sock.conn.Read(buff)
+			if n >= buffSize {
+				buffSize *= 2
+			}
 			if err != nil {
-				log.Println("sock closed err:", err)
+				if err != io.EOF {
+					log.Println("sock read err:", err)
+				}
 				sock.shutdown()
 				return
 			}
@@ -96,6 +109,10 @@ func (sock *Sock) start() {
 
 	go func() {
 		for {
+			if sock.closed {
+				return
+			}
+
 			buff := <-sock.writeChan
 			_, err := sock.conn.Write(buff)
 			if err != nil {
@@ -112,6 +129,10 @@ func (sock *Sock) write(buff []byte) {
 }
 
 func (sock *Sock) shutdown() {
+	if sock.closed {
+		return
+	}
+	sock.closed = true
 	sock.conn.Close()
 	sock.closedCallback()
 }

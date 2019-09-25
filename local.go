@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"bytes"
+	"encoding/binary"
 	"log"
 	"net"
 )
@@ -27,20 +28,20 @@ type requestProtocol struct {
 	rsv       byte
 	atyp      byte
 	domainlen uint8
-	addr      []byte
-	port      uint16
+	// addr      []byte
+	// port      uint16
 }
 
 type connectedProtocol struct {
-	len  uint8
-	atyp byte
-	addr []byte
-	port uint16
+	len uint8
+	// atyp byte
+	// addr []byte
+	// port uint16
 }
 
 type forwardProtocol struct {
-	len  uint32
-	data []byte
+	len uint32
+	// data []byte
 }
 
 type localTunnel struct {
@@ -53,10 +54,10 @@ type localTunnel struct {
 	readedCount int
 }
 
-const key = "123456"
+const key = "1234567890123456"
 
 // OpenLocalTunnel open a local tunnel that connect browser to local
-func OpenLocalTunnel(conn net.Conn, connRemote net.Conn) (err error) {
+func OpenLocalTunnel(conn net.Conn, remoteAddr string) {
 	localTunnel := new(localTunnel)
 	localTunnel.state = open
 	localTunnel.readedCount = 0
@@ -74,12 +75,12 @@ func OpenLocalTunnel(conn net.Conn, connRemote net.Conn) (err error) {
 			localTunnel.tunnel.onClientClosed()
 		},
 	)
-	localTunnel.tunnel.clientSock.start()
 
-	remoteConn, err := net.Dial("tcp", "192.168.1.40:18822")
+	remoteConn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
-		localTunnel.tunnel.clientSock.shutdown()
-		return err
+		log.Println("connect to remote err:", err)
+		localTunnel.tunnel.shutdown()
+		return
 	}
 	localTunnel.tunnel.remoteSock = CreateSock(
 		remoteConn,
@@ -87,18 +88,14 @@ func OpenLocalTunnel(conn net.Conn, connRemote net.Conn) (err error) {
 			localTunnel.onRemoteReadable()
 		},
 		func() {
-			log.Fatal("remote server crashed or key is invalid")
+			log.Println("remote server crashed or key is invalid or target network unreachable")
+			localTunnel.tunnel.shutdown()
 		},
 	)
-	localTunnel.tunnel.remoteSock.start()
-	/*
-		request connect to remote:
-		|cmd(byte)|key(var []byte)|
-	*/
 
-	localTunnel.tunnel.remoteSock.write([]byte{0x01})
-	localTunnel.tunnel.remoteSock.write([]byte(key))
-	return nil
+	localTunnel.tunnel.remoteSock.start()
+	localTunnel.tunnel.clientSock.start()
+	return
 }
 
 func (localTunnel *localTunnel) openHandle() {
@@ -131,13 +128,14 @@ methods:
 	if readBuff.Len() < int(localTunnel.op.nmethods) {
 		return
 	}
+
 	buff = make([]byte, int(localTunnel.op.nmethods))
 	readBuff.Read(buff)
 	op.methods = buff
+	localTunnel.tunnel.writeClient([]byte{byte(0x05), byte(0x00)})
 
 	localTunnel.readedCount = 0
 	localTunnel.state = request
-	localTunnel.tunnel.writeClient([]byte{byte(0x05), byte(0x00)})
 }
 
 func (localTunnel *localTunnel) requestHandle() {
@@ -147,7 +145,7 @@ func (localTunnel *localTunnel) requestHandle() {
 	rp := localTunnel.rp
 	if localTunnel.readedCount == 0 {
 		goto header
-	} else if localTunnel.readedCount == 4 {
+	} else if localTunnel.readedCount >= 4 {
 		goto addr
 	} else {
 		log.Fatal("requestHandle error")
@@ -160,7 +158,12 @@ header:
 	buff = make([]byte, 4)
 	readBuff.Read(buff)
 	rp.ver, rp.cmd, rp.rsv, rp.atyp = buff[0], buff[1], buff[2], buff[3]
+	if rp.cmd != 0x01 {
+		localTunnel.tunnel.shutdown()
+		return
+	}
 	localTunnel.readedCount = 4
+
 addr:
 	var replyBuffer *bytes.Buffer
 	switch rp.atyp {
@@ -169,7 +172,7 @@ addr:
 			return
 		}
 
-		buff = make([]byte, readBuff.Len())
+		buff = make([]byte, 6)
 		readBuff.Read(buff)
 		replyBuffer = new(bytes.Buffer)
 		replyBuffer.WriteByte(rp.atyp)
@@ -179,7 +182,7 @@ addr:
 			return
 		}
 
-		buff = make([]byte, readBuff.Len())
+		buff = make([]byte, 18)
 		readBuff.Read(buff)
 		replyBuffer = new(bytes.Buffer)
 		replyBuffer.WriteByte(rp.atyp)
@@ -189,18 +192,19 @@ addr:
 			if readBuff.Len() < 1 {
 				return
 			}
+
 			localTunnel.rp.domainlen, _ = readBuff.ReadByte()
 			localTunnel.readedCount++
 		}
 
-		if readBuff.Len() < int(localTunnel.rp.domainlen) {
+		if readBuff.Len() < int(localTunnel.rp.domainlen)+2 {
 			return
 		}
-		buff = make([]byte, rp.domainlen)
+
+		buff = make([]byte, rp.domainlen+2)
 		readBuff.Read(buff)
 		replyBuffer = new(bytes.Buffer)
 		replyBuffer.WriteByte(rp.atyp)
-		replyBuffer.WriteByte(rp.domainlen)
 		replyBuffer.Write(buff)
 	default:
 		log.Println("unexpected atyp")
@@ -208,22 +212,20 @@ addr:
 		return
 	}
 
-	localTunnel.readedCount = 0
-	localTunnel.state = connecting
-
 	encryptData, err := aesEncrypt(replyBuffer.Bytes(), []byte(key))
 	if err != nil {
 		log.Println("aesEncrypt err:", err)
 		localTunnel.tunnel.shutdown()
 		return
 	}
-	/*
-		|len(uint8)|encrypt(|atype|ip|port|)|
-		cmd:
-		0x01:connect
-	*/
-	localTunnel.tunnel.writeRemote([]byte{byte(len(encryptData))})
+	// |len(uint32)|encrypt(|atype|addr|port|)|
+	buff = make([]byte, 4)
+	binary.BigEndian.PutUint32(buff, uint32(len(encryptData)))
+	localTunnel.tunnel.writeRemote(buff)
 	localTunnel.tunnel.writeRemote(encryptData)
+
+	localTunnel.readedCount = 0
+	localTunnel.state = connecting
 }
 
 func (localTunnel *localTunnel) forwardClientHandle() {
@@ -234,9 +236,12 @@ func (localTunnel *localTunnel) forwardClientHandle() {
 		localTunnel.tunnel.shutdown()
 		return
 	}
+
+	buff := make([]byte, 4)
+	binary.BigEndian.PutUint32(buff, uint32(len(encryptData)))
+	localTunnel.tunnel.writeRemote(append(buff, encryptData...))
+
 	readBuff.Reset()
-	localTunnel.tunnel.writeRemote([]byte{byte(len(encryptData))})
-	localTunnel.tunnel.writeRemote(encryptData)
 }
 
 func (localTunnel *localTunnel) onClientReadable() {
@@ -260,7 +265,7 @@ func (localTunnel *localTunnel) connectingHandle() {
 	} else if localTunnel.readedCount == 1 {
 		goto data
 	} else {
-		log.Fatal("connectingHandle error")
+		log.Fatal("connectingHandle error:")
 	}
 
 header:
@@ -282,41 +287,52 @@ data:
 		log.Println("aesDecrypt err:", err)
 		return
 	}
-	localTunnel.state = connected
 	localTunnel.tunnel.writeClient([]byte{0x05, 0x00, 0x00})
 	localTunnel.tunnel.writeClient(decryptData)
+
+	localTunnel.readedCount = 0
+	localTunnel.state = connected
 }
 
 // |len(uint32)|encrypt(data []byte)|
 func (localTunnel *localTunnel) forwardRemoteHandle() {
+start:
 	remoteSock := localTunnel.tunnel.remoteSock
 	readBuff := remoteSock.readBuff
 	fp := localTunnel.fp
+	var buff []byte
 	if localTunnel.readedCount == 0 {
 		goto header
-	} else if localTunnel.readedCount == 1 {
+	} else if localTunnel.readedCount == 4 {
 		goto data
 	} else {
-		log.Fatal("connectingHandle error")
+		log.Fatal("forwardRemoteHandle error")
 	}
 
 header:
-	if readBuff.Len() < 1 {
+	if readBuff.Len() < 4 {
 		return
 	}
+	buff = make([]byte, 4)
+	readBuff.Read(buff)
+	localTunnel.readedCount = 4
+	fp.len = binary.BigEndian.Uint32(buff)
 
 data:
 	if readBuff.Len() < int(fp.len) {
 		return
 	}
-	buff := make([]byte, fp.len)
+	buff = make([]byte, fp.len)
 	readBuff.Read(buff)
 	decryptData, err := aesDecrypt(buff, []byte(key))
 	if err != nil {
 		log.Println("aesDecrypt err:", err)
 		return
 	}
+
 	localTunnel.tunnel.writeClient(decryptData)
+	localTunnel.readedCount = 0
+	goto start
 }
 
 func (localTunnel *localTunnel) onRemoteReadable() {
@@ -325,5 +341,7 @@ func (localTunnel *localTunnel) onRemoteReadable() {
 		localTunnel.connectingHandle()
 	case connected:
 		localTunnel.forwardRemoteHandle()
+	default:
+		log.Fatal("onRemoteReadable err")
 	}
 }
