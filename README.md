@@ -1,5 +1,5 @@
 # socks5
-A light weight socks5 proxy server and go which contains a local side and a remote side.
+A light weight socks5 proxy server implemented in go which contains a local side and a remote side.
 you can use it to surf the Internet scientifically!
 ## Suport
 - AES encryption
