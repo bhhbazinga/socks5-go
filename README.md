@@ -31,4 +31,5 @@ Usage:
 Examples:
 Run as local:-l -la 0.0.0.0 -lp 8001 -ra 10.101.200.20 -rp 8002 -k 1234567890qwerty
 Run as remote:-r -ra 0.0.0.0 -rp 8002 -k 1234567890qwerty
-Enjoy it!
+
+Finaly, if you use chrome, you can install the SwitchyOmega plug-in, and configure the local startup parameters.
