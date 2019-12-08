@@ -59,6 +59,7 @@ func (remoteTunnel *remoteTunnel) parseDomain(data []byte) (*net.TCPAddr, error)
 	domain := data[1 : len-2]
 	port := binary.BigEndian.Uint16(data[len-2:])
 	host := fmt.Sprintf("%s:%d", string(domain), port)
+	log.Printf("connect to %s", host)
 	return net.ResolveTCPAddr("tcp", host)
 }
 

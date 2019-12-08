@@ -2,15 +2,15 @@ package socks5
 
 import (
 	"bytes"
-	"io"
-	"log"
 	"net"
+	"time"
 )
 
 var key = "1234567890qwerty"
-var buffSize = 1024
 
-const chanSize = 1024
+const buffSize = 8196
+const chanSize = 16
+const beatSecond = 30
 
 // ReadableFunc as a callback when socket readable or closed
 type ReadableFunc func()
@@ -23,6 +23,7 @@ type Sock struct {
 	readableCallback ReadableFunc
 	closedCallback   ReadableFunc
 	closed           bool
+	beatTimer        *time.Timer
 }
 
 type tunnel struct {
@@ -93,18 +94,13 @@ func (sock *Sock) start() {
 
 			buff := make([]byte, buffSize)
 			n, err := sock.conn.Read(buff)
-			if n >= buffSize {
-				buffSize *= 2
-			}
 			if err != nil {
-				if err != io.EOF {
-					log.Println("sock read err:", err)
-				}
 				sock.shutdown()
 				return
 			}
 			sock.readBuff.Write(buff[:n])
 			sock.readableCallback()
+			sock.beatTimer.Reset(time.Second * beatSecond)
 		}
 	}()
 
@@ -117,15 +113,22 @@ func (sock *Sock) start() {
 			buff := <-sock.writeChan
 			_, err := sock.conn.Write(buff)
 			if err != nil {
-				log.Println("sock write err:", err)
 				sock.shutdown()
 				return
 			}
+			sock.beatTimer.Reset(time.Second * beatSecond)
 		}
 	}()
+
+	sock.beatTimer = time.AfterFunc(time.Second*beatSecond, func() {
+		sock.shutdown()
+	})
 }
 
 func (sock *Sock) write(buff []byte) {
+	if sock.closed {
+		return
+	}
 	sock.writeChan <- buff
 }
 
@@ -135,5 +138,7 @@ func (sock *Sock) shutdown() {
 	}
 	sock.closed = true
 	sock.conn.Close()
+	close(sock.writeChan)
+	sock.beatTimer.Stop()
 	sock.closedCallback()
 }
