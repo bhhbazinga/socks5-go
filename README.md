@@ -9,7 +9,7 @@ you can use it to surf the Internet scientifically!
 ```
 git clone https://github.com/bhhbazinga/socks5-go.git
 mv socks5-go $GOPATH/src
-cd $GOPATH/src/sockst-go/main
+cd $GOPATH/src/socks5-go/main
 go run main.go
 ```
 ## Usage
