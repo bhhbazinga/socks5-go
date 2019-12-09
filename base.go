@@ -139,6 +139,8 @@ func (sock *Sock) shutdown() {
 	sock.closed = true
 	sock.conn.Close()
 	close(sock.writeChan)
-	sock.beatTimer.Stop()
+	if sock.beatTimer != nil {
+		sock.beatTimer.Stop()
+	}
 	sock.closedCallback()
 }

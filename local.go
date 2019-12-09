@@ -87,7 +87,6 @@ func OpenLocalTunnel(conn net.Conn, remoteAddr string, k string) {
 			localTunnel.onRemoteReadable()
 		},
 		func() {
-			log.Println("remote server crashed or key is invalid or target network unreachable")
 			localTunnel.tunnel.shutdown()
 		},
 	)
