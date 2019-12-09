@@ -86,6 +86,10 @@ func CreateSock(conn net.Conn, readableCb ReadableFunc, closedCb ReadableFunc) *
 }
 
 func (sock *Sock) start() {
+	sock.beatTimer = time.AfterFunc(time.Second*beatSecond, func() {
+		sock.shutdown()
+	})
+
 	go func() {
 		for {
 			if sock.closed {
@@ -119,10 +123,6 @@ func (sock *Sock) start() {
 			sock.beatTimer.Reset(time.Second * beatSecond)
 		}
 	}()
-
-	sock.beatTimer = time.AfterFunc(time.Second*beatSecond, func() {
-		sock.shutdown()
-	})
 }
 
 func (sock *Sock) write(buff []byte) {
