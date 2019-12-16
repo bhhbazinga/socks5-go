@@ -9,7 +9,6 @@ import (
 var key = "1234567890qwerty"
 
 const buffSize = 8196
-const chanSize = 16
 const beatSecond = 30
 
 // ReadableFunc as a callback when socket readable or closed
@@ -19,7 +18,6 @@ type ReadableFunc func()
 type Sock struct {
 	conn             net.Conn
 	readBuff         *bytes.Buffer
-	writeChan        chan []byte
 	readableCallback ReadableFunc
 	closedCallback   ReadableFunc
 	closed           bool
@@ -80,7 +78,6 @@ func CreateSock(conn net.Conn, readableCb ReadableFunc, closedCb ReadableFunc) *
 	sock.readBuff = new(bytes.Buffer)
 	sock.readableCallback = readableCb
 	sock.closedCallback = closedCb
-	sock.writeChan = make(chan []byte, chanSize)
 	sock.closed = false
 	return sock
 }
@@ -108,28 +105,18 @@ func (sock *Sock) start() {
 		}
 	}()
 
-	go func() {
-		for {
-			if sock.closed {
-				return
-			}
-
-			buff := <-sock.writeChan
-			_, err := sock.conn.Write(buff)
-			if err != nil {
-				sock.shutdown()
-				return
-			}
-			sock.beatTimer.Reset(time.Second * beatSecond)
-		}
-	}()
 }
 
 func (sock *Sock) write(buff []byte) {
 	if sock.closed {
 		return
 	}
-	sock.writeChan <- buff
+	_, err := sock.conn.Write(buff)
+	if err != nil {
+		sock.shutdown()
+		return
+	}
+	sock.beatTimer.Reset(time.Second * beatSecond)
 }
 
 func (sock *Sock) shutdown() {
@@ -138,7 +125,6 @@ func (sock *Sock) shutdown() {
 	}
 	sock.closed = true
 	sock.conn.Close()
-	close(sock.writeChan)
 	if sock.beatTimer != nil {
 		sock.beatTimer.Stop()
 	}
